@@ -280,9 +280,18 @@ local function openMenu(ply)
     end)
 end
 
+local function openCaseworkerUI(ply)
+    if not canUseNet(ply) or not isCaseworker(ply) then return end
+    sendCaseworkerList(ply)
+end
+
 hook.Add("PlayerSay", "Ausreise_ChatCommand", function(ply, text)
     if text:lower():Trim() == "/ausreise" then
-        openMenu(ply)
+        if isCaseworker(ply) then
+            openCaseworkerUI(ply)
+        else
+            openMenu(ply)
+        end
         return ""
     end
 end)
@@ -290,7 +299,11 @@ end)
 -- Network receive handlers
 net.Receive("ausreise_open", function(_, ply)
     if not canUseNet(ply) then return end
-    openMenu(ply)
+    if isCaseworker(ply) then
+        openCaseworkerUI(ply)
+    else
+        openMenu(ply)
+    end
 end)
 
 net.Receive("ausreise_submit", function(_, ply)
