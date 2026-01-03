@@ -104,3 +104,10 @@ cfg.Text = {
         denied = "Ausreise abgelehnt",
     }
 }
+
+if Ausreise.RefreshLookups then
+    Ausreise.RefreshLookups()
+end
+if Ausreise.EnsureConfigTexts then
+    Ausreise.EnsureConfigTexts()
+end
