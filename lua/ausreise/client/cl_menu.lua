@@ -135,7 +135,7 @@ local function openStatus(app)
         info:Dock(TOP)
         info:SetWrap(true)
         info:SetTall(24)
-        info:SetText("Entschieden am: " .. (app.decided_at or "-") .. " | G\u00fcltig bis: " .. (app.valid_until or "-"))
+        info:SetText("Entschieden am: " .. (app.decided_at or "-") .. " | Gültig bis: " .. (app.valid_until or "-"))
     end
 end
 

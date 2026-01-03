@@ -2,7 +2,7 @@ local function openList(rows)
     local frame = vgui.Create("DFrame")
     frame:SetSize(700, 520)
     frame:Center()
-    frame:SetTitle("Ausreiseantr\u00e4ge - Sachbearbeiter")
+    frame:SetTitle("Ausreiseanträge - Sachbearbeiter")
     frame:MakePopup()
 
     local list = vgui.Create("DListView", frame)
@@ -12,7 +12,7 @@ local function openList(rows)
     list:AddColumn("SteamID64")
     list:AddColumn("Status")
     list:AddColumn("Eingang")
-    list:AddColumn("G\u00fcltig bis")
+    list:AddColumn("Gültig bis")
 
     for _, r in ipairs(rows or {}) do
         list:AddLine(r.id, r.rpname, r.steamid64, r.status, r.submitted_at, r.valid_until)

@@ -10,9 +10,9 @@ timer.Create("Ausreise_CaseworkerNotify", interval, 0, function()
         for _, ply in ipairs(player.GetAll()) do
             if ply:Team() and table.HasValue(cfg.CaseworkerTeams or {}, ply:Team()) then
                 if DarkRP and DarkRP.notify then
-                    DarkRP.notify(ply, 0, 5, "Es gibt " .. count .. " Ausreiseantr\u00e4ge zur Bearbeitung.")
+                    DarkRP.notify(ply, 0, 5, "Es gibt " .. count .. " Ausreiseanträge zur Bearbeitung.")
                 else
-                    ply:ChatPrint("[Ausreise] Es gibt " .. count .. " Ausreiseantr\u00e4ge zur Bearbeitung.")
+                    ply:ChatPrint("[Ausreise] Es gibt " .. count .. " Ausreiseanträge zur Bearbeitung.")
                 end
             end
         end

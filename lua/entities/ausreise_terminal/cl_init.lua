@@ -17,7 +17,7 @@ local function openTerminal(rows)
     list:AddColumn("Name")
     list:AddColumn("SteamID64")
     list:AddColumn("Gestellt am")
-    list:AddColumn("G\u00fcltig bis")
+    list:AddColumn("Gültig bis")
     list:AddColumn("Status")
 
     local function populate(filter)

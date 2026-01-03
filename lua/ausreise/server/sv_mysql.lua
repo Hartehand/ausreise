@@ -161,7 +161,7 @@ function DB.createTables()
     local stmts = createTablesSql()
     for _, sql in ipairs(stmts) do
         DB.query(sql, nil, function()
-            log("Tabelle gepr\u00fcft/erstellt.")
+            log("Tabelle geprüft/erstellt.")
         end, function(err)
             logError("CreateTable fehlgeschlagen: " .. tostring(err))
         end)

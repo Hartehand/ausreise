@@ -49,15 +49,15 @@ cfg.TerminalAccessTeams = {
 cfg.Fields = {
     {
         key = "valid_until",
-        label = "G\u00fcltig bis",
+        label = "Gültig bis",
         helper = "Datum, bis wann der Antrag gelten soll (JJJJ-MM-TT).",
         type = "date",
         required = true,
     },
     {
         key = "reason",
-        label = "Begr\u00fcndung",
-        helper = "Beschreibe, warum du ausreisen m\u00f6chtest.",
+        label = "Begründung",
+        helper = "Beschreibe, warum du ausreisen möchtest.",
         type = "multiline",
         required = true,
         maxLen = 2048,
@@ -65,7 +65,7 @@ cfg.Fields = {
     {
         key = "zielort",
         label = "Zielort",
-        helper = "Wohin m\u00f6chtest du reisen?",
+        helper = "Wohin möchtest du reisen?",
         type = "text",
         required = true,
         maxLen = 255,
@@ -83,11 +83,11 @@ cfg.Fields = {
         helper = "",
         type = "dropdown",
         required = true,
-        options = {"Zug", "Auto", "Flugzeug", "Zu Fu\u00df"},
+        options = {"Zug", "Auto", "Flugzeug", "Zu Fuß"},
     },
     {
         key = "kosten",
-        label = "Gesch\u00e4tzte Kosten (DM)",
+        label = "Geschätzte Kosten (DM)",
         helper = "",
         type = "number",
         required = false,

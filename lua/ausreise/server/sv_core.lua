@@ -76,13 +76,13 @@ local function sanitizeFields(data)
             if field.max and val > field.max then val = field.max end
         elseif field.type == "date" then
             val = tostring(val)
-            if not isDate(val) then return false, "Ung\u00fcltiges Datum" end
+            if not isDate(val) then return false, "Ungültiges Datum" end
         elseif field.type == "dropdown" then
             local found = false
             for _, opt in ipairs(field.options or {}) do
                 if opt == val then found = true break end
             end
-            if not found then return false, "Ung\u00fcltige Auswahl" end
+            if not found then return false, "Ungültige Auswahl" end
         elseif field.type == "checkbox" then
             val = val and true or false
         end
@@ -337,7 +337,7 @@ net.Receive("ausreise_caseworker_vote", function(_, ply)
     DB.query("SELECT status FROM ausreise_applications WHERE id = ?", {appId}, function(rows)
         local app = rows and rows[1]
         if not app or (app.status ~= Ausreise.Status.submitted and app.status ~= Ausreise.Status.in_progress) then
-            notify(ply, "Antrag nicht verf\u00fcgbar.", 1)
+            notify(ply, "Antrag nicht verfügbar.", 1)
             return
         end
         existingVote(appId, teamKey, function(exists)
