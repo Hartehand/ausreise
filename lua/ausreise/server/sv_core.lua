@@ -298,7 +298,7 @@ net.Receive("ausreise_submit", function(_, ply)
             notify(ply, "Du hast bereits einen Antrag.", 1)
             return
         end
-        local rpname = ply:getDarkRPVar and ply:getDarkRPVar("rpname") or ply:Nick()
+        local rpname = (ply.getDarkRPVar and ply:getDarkRPVar("rpname")) or ply:Nick()
         local dataJson = util.TableToJSON(fieldsOrErr, false, true)
         DB.query("INSERT INTO ausreise_applications (steamid64, rpname, submitted_at, valid_until, status, data_json) VALUES (?, ?, ?, ?, ?, ?)", {
             sid,
