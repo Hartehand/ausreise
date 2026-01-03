@@ -286,12 +286,12 @@ local function openCaseworkerUI(ply)
 end
 
 hook.Add("PlayerSay", "Ausreise_ChatCommand", function(ply, text)
-    if text:lower():Trim() == "/ausreise" then
-        if isCaseworker(ply) then
-            openCaseworkerUI(ply)
-        else
-            openMenu(ply)
-        end
+    local msg = text:lower():Trim()
+    if msg == "/ausreise" then
+        if isCaseworker(ply) then openCaseworkerUI(ply) else openMenu(ply) end
+        return ""
+    elseif msg == "/ausreisesachbearbeiter" or msg == "/ausreise_sb" or msg == "/ausreisevote" then
+        openCaseworkerUI(ply)
         return ""
     end
 end)
