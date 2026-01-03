@@ -144,6 +144,18 @@ local function refreshPendingCount()
     end, function() pendingCounts = 0 end)
 end
 
+local function pushStatusUpdates()
+    if not DB.ready then return end
+    for _, ply in ipairs(player.GetAll()) do
+        local sid = ply:SteamID64()
+        if sid and sid ~= "" then
+            loadApplication(sid, function(app)
+                sendApplicationToClient(ply, app)
+            end)
+        end
+    end
+end
+
 local function sendApplicationToClient(ply, app)
     net.Start("ausreise_data")
     net.WriteBool(app ~= nil)
@@ -366,6 +378,7 @@ end)
 
 -- Pending refresh for notifications
 timer.Create("Ausreise_RefreshPending", 300, 0, refreshPendingCount)
+timer.Create("Ausreise_StatusBroadcast", 60, 0, pushStatusUpdates)
 
 -- Init hook to ensure early count
 hook.Add("InitPostEntity", "Ausreise_InitialCount", function()
