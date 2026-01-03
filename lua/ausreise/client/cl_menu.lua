@@ -80,11 +80,17 @@ local function openForm(existing)
             if field.type == "checkbox" then
                 payload[field.key] = input:GetChecked()
             elseif field.type == "dropdown" then
-                local selectedText = input.GetSelectedText and input:GetSelectedText() or nil
-                if not selectedText or selectedText == "" then
-                    selectedText = input:GetValue()
+                local chosen
+                if input.GetSelectedID and input.GetOptionText then
+                    local id = input:GetSelectedID()
+                    if id and id > 0 then
+                        chosen = input:GetOptionText(id)
+                    end
                 end
-                payload[field.key] = selectedText
+                if not chosen or chosen == "" then
+                    chosen = input:GetValue()
+                end
+                payload[field.key] = chosen
             else
                 payload[field.key] = input:GetValue()
             end
