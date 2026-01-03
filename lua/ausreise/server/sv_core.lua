@@ -46,8 +46,11 @@ end
 
 local function isTerminalUser(ply)
     local teamIndex = ply:Team()
+    local teamName = team.GetName(teamIndex)
     for _, t in ipairs(cfg.TerminalAccessTeams or {}) do
-        if t and teamIndex == t then return true end
+        if not t then continue end
+        if isnumber(t) and teamIndex == t then return true end
+        if isstring(t) and teamName and string.lower(teamName) == string.lower(t) then return true end
     end
     return false
 end
@@ -138,6 +141,21 @@ local function updateStatus(appId, status, cb)
     end)
 end
 
+local function sendApplicationToClient(ply, app)
+    net.Start("ausreise_data")
+    net.WriteBool(app ~= nil)
+    if app then
+        net.WriteUInt(app.id, 32)
+        net.WriteString(app.status)
+        net.WriteString(app.submitted_at or "")
+        net.WriteString(app.decided_at or "")
+        net.WriteString(app.valid_until or "")
+        net.WriteString(app.data_json or "{}")
+    end
+    net.WriteTable(cfg.Fields or {})
+    net.Send(ply)
+end
+
 local function refreshPendingCount()
     DB.query("SELECT COUNT(*) as c FROM ausreise_applications WHERE status IN ('submitted','in_progress')", nil, function(rows)
         pendingCounts = tonumber(rows[1] and rows[1].c) or 0
@@ -154,21 +172,6 @@ local function pushStatusUpdates()
             end)
         end
     end
-end
-
-local function sendApplicationToClient(ply, app)
-    net.Start("ausreise_data")
-    net.WriteBool(app ~= nil)
-    if app then
-        net.WriteUInt(app.id, 32)
-        net.WriteString(app.status)
-        net.WriteString(app.submitted_at or "")
-        net.WriteString(app.decided_at or "")
-        net.WriteString(app.valid_until or "")
-        net.WriteString(app.data_json or "{}")
-    end
-    net.WriteTable(cfg.Fields or {})
-    net.Send(ply)
 end
 
 local function canSubmit(ply)
