@@ -31,7 +31,12 @@ local function buildTeamLookup(list)
         if isnumber(v) then
             ids[v] = true
         elseif isstring(v) then
-            names[string.lower(v)] = true
+            local constVal = _G[v]
+            if isnumber(constVal) then
+                ids[constVal] = true
+            else
+                names[string.lower(v)] = true
+            end
         end
     end
     return {ids = ids, names = names}
@@ -44,19 +49,28 @@ local function teamInLookup(teamId, lookup)
     return lookup.names[string.lower(tName)] == true
 end
 
-function Ausreise.RefreshLookups()
+function Ausreise.RefreshLookups(force)
     Ausreise.Lookup = Ausreise.Lookup or {}
+    if not force and Ausreise._lookupBuilt then return end
     Ausreise.Lookup.caseworker = buildTeamLookup(cfg.CaseworkerTeams)
     Ausreise.Lookup.terminal = buildTeamLookup(cfg.TerminalAccessTeams)
+    Ausreise._lookupBuilt = true
+    Ausreise._nextLookupRefresh = RealTime() + 10
 end
 
 function Ausreise.IsCaseworker(ply)
     if not IsValid(ply) or not ply.Team then return false end
+    if not Ausreise.Lookup or not Ausreise.Lookup.caseworker or (Ausreise._nextLookupRefresh and Ausreise._nextLookupRefresh < RealTime()) then
+        Ausreise.RefreshLookups(true)
+    end
     return teamInLookup(ply:Team(), Ausreise.Lookup.caseworker or {ids = {}, names = {}})
 end
 
 function Ausreise.IsTerminalUser(ply)
     if not IsValid(ply) or not ply.Team then return false end
+    if not Ausreise.Lookup or not Ausreise.Lookup.terminal or (Ausreise._nextLookupRefresh and Ausreise._nextLookupRefresh < RealTime()) then
+        Ausreise.RefreshLookups(true)
+    end
     return teamInLookup(ply:Team(), Ausreise.Lookup.terminal or {ids = {}, names = {}})
 end
 
@@ -72,3 +86,9 @@ end
 
 Ausreise.RefreshLookups()
 Ausreise.EnsureConfigTexts()
+
+if SERVER then
+    timer.Create("Ausreise_EnsureLookupReady", 5, 6, function()
+        Ausreise.RefreshLookups(true)
+    end)
+end
