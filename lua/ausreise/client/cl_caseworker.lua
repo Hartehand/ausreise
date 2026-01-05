@@ -1,9 +1,26 @@
-local function openList(rows)
+local NET = Ausreise.Net
+local cfg = Ausreise.Config or {}
+
+local state = {
+    listFrame = nil,
+    detailFrame = nil,
+    lastRows = {},
+}
+
+local function rebuildList(rows, forceOpen)
+    state.lastRows = rows or {}
+    if not forceOpen and not IsValid(state.listFrame) then return end
+
+    if IsValid(state.listFrame) then
+        state.listFrame:Remove()
+    end
+
     local frame = vgui.Create("DFrame")
-    frame:SetSize(700, 520)
+    frame:SetSize(720, 540)
     frame:Center()
     frame:SetTitle("Ausreiseanträge - Sachbearbeiter")
     frame:MakePopup()
+    state.listFrame = frame
 
     local list = vgui.Create("DListView", frame)
     list:Dock(FILL)
@@ -14,23 +31,25 @@ local function openList(rows)
     list:AddColumn("Eingang")
     list:AddColumn("Gültig bis")
 
-    for _, r in ipairs(rows or {}) do
+    for _, r in ipairs(state.lastRows or {}) do
         list:AddLine(r.id, r.rpname, r.steamid64, r.status, r.submitted_at, r.valid_until)
     end
 
     list.OnRowSelected = function(_, _, line)
-        net.Start("ausreise_caseworker_detail")
+        net.Start(NET.CaseworkerDetail)
         net.WriteUInt(tonumber(line:GetColumnText(1)) or 0, 32)
         net.SendToServer()
     end
 end
 
 local function openDetail(app, votes)
+    if IsValid(state.detailFrame) then state.detailFrame:Remove() end
     local frame = vgui.Create("DFrame")
-    frame:SetSize(600, 560)
+    frame:SetSize(640, 580)
     frame:Center()
     frame:SetTitle("Antrag #" .. app.id)
     frame:MakePopup()
+    state.detailFrame = frame
 
     local scroll = vgui.Create("DScrollPanel", frame)
     scroll:Dock(FILL)
@@ -39,7 +58,7 @@ local function openDetail(app, votes)
 
     local lbl = vgui.Create("DLabel", scroll)
     lbl:Dock(TOP)
-    lbl:SetText("Status: " .. (app.status or "?"))
+    lbl:SetText("Status: " .. (cfg.Text.StatusNames[app.status] or app.status or "?"))
     lbl:SetTall(24)
 
     for k, v in pairs(data) do
@@ -59,7 +78,7 @@ local function openDetail(app, votes)
 
     local votesPanel = vgui.Create("DPanel", scroll)
     votesPanel:Dock(TOP)
-    votesPanel:SetTall(120)
+    votesPanel:SetTall(140)
     votesPanel:SetPaintBackground(false)
 
     local lVotes = vgui.Create("DLabel", votesPanel)
@@ -81,7 +100,7 @@ local function openDetail(app, votes)
     btnApprove:SetTall(28)
     btnApprove:SetText("Zustimmen")
     btnApprove.DoClick = function()
-        net.Start("ausreise_caseworker_vote")
+        net.Start(NET.CaseworkerVote)
         net.WriteUInt(app.id, 32)
         net.WriteBool(true)
         net.SendToServer()
@@ -93,7 +112,7 @@ local function openDetail(app, votes)
     btnDeny:SetTall(28)
     btnDeny:SetText("Ablehnen")
     btnDeny.DoClick = function()
-        net.Start("ausreise_caseworker_vote")
+        net.Start(NET.CaseworkerVote)
         net.WriteUInt(app.id, 32)
         net.WriteBool(false)
         net.SendToServer()
@@ -101,12 +120,13 @@ local function openDetail(app, votes)
     end
 end
 
-net.Receive("ausreise_caseworker_list", function()
+net.Receive(NET.CaseworkerList, function()
+    local shouldOpen = net.ReadBool()
     local rows = net.ReadTable() or {}
-    openList(rows)
+    rebuildList(rows, shouldOpen)
 end)
 
-net.Receive("ausreise_caseworker_detail", function()
+net.Receive(NET.CaseworkerDetail, function()
     local ok = net.ReadBool()
     if not ok then return end
     local app = net.ReadTable()
@@ -115,6 +135,6 @@ net.Receive("ausreise_caseworker_detail", function()
 end)
 
 concommand.Add("ausreise_caseworker", function()
-    net.Start("ausreise_caseworker_list")
+    net.Start(NET.CaseworkerList)
     net.SendToServer()
 end)

@@ -1,17 +1,66 @@
 local cfg = Ausreise.Config or {}
+local NET = Ausreise.Net
+
+local state = {
+    lastFields = cfg.Fields or {},
+    lastApp = nil,
+    statusFrame = nil,
+    formFrame = nil,
+}
+
+local function ensureFields(fields)
+    state.lastFields = fields or cfg.Fields or {}
+end
+
+local function closeFrames()
+    if IsValid(state.statusFrame) then state.statusFrame:Close() end
+    if IsValid(state.formFrame) then state.formFrame:Close() end
+end
+
+local function buildInput(field, parent, existing)
+    local input
+    if field.type == "text" or field.type == "number" or field.type == "date" then
+        input = vgui.Create("DTextEntry", parent)
+        input:SetPos(0, 36)
+        input:SetSize(480, 24)
+        if field.type == "number" then input:SetNumeric(true) end
+        if field.type == "date" then input:SetPlaceholderText("YYYY-MM-DD") end
+        if existing then input:SetText(tostring(existing[field.key] or "")) end
+    elseif field.type == "multiline" then
+        input = vgui.Create("DTextEntry", parent)
+        input:SetPos(0, 36)
+        input:SetSize(480, 90)
+        input:SetMultiline(true)
+        if existing then input:SetText(tostring(existing[field.key] or "")) end
+    elseif field.type == "dropdown" then
+        input = vgui.Create("DComboBox", parent)
+        input:SetPos(0, 36)
+        input:SetSize(260, 24)
+        for _, opt in ipairs(field.options or {}) do input:AddChoice(opt) end
+        if existing and existing[field.key] then input:SetValue(existing[field.key]) end
+    elseif field.type == "checkbox" then
+        input = vgui.Create("DCheckBoxLabel", parent)
+        input:SetPos(0, 36)
+        input:SetText("Ja")
+        if existing then input:SetChecked(existing[field.key] == true) end
+    end
+    return input
+end
 
 local function openForm(existing)
+    if IsValid(state.formFrame) then state.formFrame:Close() end
     local frame = vgui.Create("DFrame")
-    frame:SetSize(520, 600)
+    frame:SetSize(520, 620)
     frame:Center()
     frame:SetTitle("Ausreiseantrag")
     frame:MakePopup()
+    state.formFrame = frame
 
     local scroll = vgui.Create("DScrollPanel", frame)
     scroll:Dock(FILL)
 
     local inputs = {}
-    for _, field in ipairs(cfg.Fields or {}) do
+    for _, field in ipairs(state.lastFields or {}) do
         local pnl = vgui.Create("DPanel", scroll)
         pnl:Dock(TOP)
         pnl:DockMargin(0, 0, 0, 8)
@@ -20,7 +69,7 @@ local function openForm(existing)
 
         local lbl = vgui.Create("DLabel", pnl)
         lbl:SetPos(0, 0)
-        lbl:SetText(field.label .. (field.required and " *" or ""))
+        lbl:SetText((field.label or field.key) .. (field.required and " *" or ""))
         lbl:SizeToContents()
 
         local helper = vgui.Create("DLabel", pnl)
@@ -29,42 +78,7 @@ local function openForm(existing)
         helper:SetTextColor(Color(160, 160, 160))
         helper:SizeToContents()
 
-        local input
-        if field.type == "text" then
-            input = vgui.Create("DTextEntry", pnl)
-            input:SetPos(0, 36)
-            input:SetSize(480, 24)
-            if existing then input:SetText(existing[field.key] or "") end
-        elseif field.type == "number" then
-            input = vgui.Create("DTextEntry", pnl)
-            input:SetPos(0, 36)
-            input:SetSize(200, 24)
-            input:SetNumeric(true)
-            if existing then input:SetText(tostring(existing[field.key] or "")) end
-        elseif field.type == "date" then
-            input = vgui.Create("DTextEntry", pnl)
-            input:SetPos(0, 36)
-            input:SetSize(200, 24)
-            input:SetPlaceholderText("YYYY-MM-DD")
-            if existing then input:SetText(existing[field.key] or "") end
-        elseif field.type == "multiline" then
-            input = vgui.Create("DTextEntry", pnl)
-            input:SetPos(0, 36)
-            input:SetSize(480, 90)
-            input:SetMultiline(true)
-            if existing then input:SetText(existing[field.key] or "") end
-        elseif field.type == "dropdown" then
-            input = vgui.Create("DComboBox", pnl)
-            input:SetPos(0, 36)
-            input:SetSize(260, 24)
-            for _, opt in ipairs(field.options or {}) do input:AddChoice(opt) end
-            if existing and existing[field.key] then input:SetValue(existing[field.key]) end
-        elseif field.type == "checkbox" then
-            input = vgui.Create("DCheckBoxLabel", pnl)
-            input:SetPos(0, 36)
-            input:SetText("Ja")
-            if existing then input:SetChecked(existing[field.key] == true) end
-        end
+        local input = buildInput(field, pnl, existing)
         inputs[field.key] = input
     end
 
@@ -74,10 +88,10 @@ local function openForm(existing)
     submit:SetText("Antrag absenden")
     submit.DoClick = function()
         local payload = {}
-        for _, field in ipairs(cfg.Fields or {}) do
+        for _, field in ipairs(state.lastFields or {}) do
             local input = inputs[field.key]
             if not IsValid(input) then continue end
-            if field.type == "checkbox" then
+            if field.type == "checkbox" and input.GetChecked then
                 payload[field.key] = input:GetChecked()
             elseif field.type == "dropdown" then
                 local chosen
@@ -87,17 +101,16 @@ local function openForm(existing)
                         chosen = input:GetOptionText(id)
                     end
                 end
-                if not chosen or chosen == "" then
-                    chosen = input:GetValue()
-                end
+                chosen = chosen or (input.GetValue and input:GetValue()) or ""
                 payload[field.key] = chosen
             else
-                payload[field.key] = input:GetValue()
+                local val = (input.GetValue and input:GetValue()) or (input.GetText and input:GetText()) or ""
+                payload[field.key] = val
             end
         end
         local json = util.TableToJSON(payload, false, true) or ""
-        net.Start("ausreise_submit")
-        net.WriteUInt(#json, 16)
+        net.Start(NET.Submit)
+        net.WriteUInt(#json, 17)
         net.WriteData(json, #json)
         net.SendToServer()
         frame:Close()
@@ -105,12 +118,14 @@ local function openForm(existing)
 end
 
 local function openStatus(app)
+    if IsValid(state.statusFrame) then state.statusFrame:Close() end
     local data = util.JSONToTable(app.data_json or "{}") or {}
     local frame = vgui.Create("DFrame")
-    frame:SetSize(520, 600)
+    frame:SetSize(520, 620)
     frame:Center()
     frame:SetTitle("Ausreiseantrag - Status")
     frame:MakePopup()
+    state.statusFrame = frame
 
     local scroll = vgui.Create("DScrollPanel", frame)
     scroll:Dock(FILL)
@@ -119,9 +134,9 @@ local function openStatus(app)
     lbl:Dock(TOP)
     lbl:SetWrap(true)
     lbl:SetTall(40)
-    lbl:SetText("Status: " .. (cfg.Text.StatusNames[app.status] or app.status))
+    lbl:SetText("Status: " .. (cfg.Text.StatusNames[app.status] or app.status or "?"))
 
-    for _, field in ipairs(cfg.Fields or {}) do
+    for _, field in ipairs(state.lastFields or {}) do
         local val = data[field.key]
         local pnl = vgui.Create("DPanel", scroll)
         pnl:Dock(TOP)
@@ -131,7 +146,7 @@ local function openStatus(app)
 
         local lbl2 = vgui.Create("DLabel", pnl)
         lbl2:SetPos(0, 0)
-        lbl2:SetText(field.label)
+        lbl2:SetText(field.label or field.key or "")
         lbl2:SizeToContents()
 
         local lbl3 = vgui.Create("DLabel", pnl)
@@ -149,10 +164,25 @@ local function openStatus(app)
     end
 end
 
-net.Receive("ausreise_data", function()
+local function handleData(openFlag)
+    if state.lastApp then
+        if openFlag or IsValid(state.statusFrame) then
+            openStatus(state.lastApp)
+        end
+    else
+        if openFlag then
+            openForm()
+        elseif IsValid(state.formFrame) then
+            -- Benutzer tippt gerade; nicht überschreiben, wenn kein explizites Öffnen gewünscht ist.
+        end
+    end
+end
+
+net.Receive(NET.Data, function()
     local has = net.ReadBool()
+    local shouldOpen = net.ReadBool()
     if has then
-        local app = {
+        state.lastApp = {
             id = net.ReadUInt(32),
             status = net.ReadString(),
             submitted_at = net.ReadString(),
@@ -160,15 +190,24 @@ net.Receive("ausreise_data", function()
             valid_until = net.ReadString(),
             data_json = net.ReadString(),
         }
-        cfg.Fields = net.ReadTable() or {}
-        openStatus(app)
     else
-        cfg.Fields = net.ReadTable() or {}
-        openForm()
+        state.lastApp = nil
     end
+    ensureFields(net.ReadTable())
+    handleData(shouldOpen)
 end)
 
 concommand.Add("ausreise_open", function()
-    net.Start("ausreise_open")
+    net.Start(NET.Open)
+    net.SendToServer()
+end)
+
+concommand.Add("ausreise_open_caseworker", function()
+    net.Start(NET.OpenCaseworker)
+    net.SendToServer()
+end)
+
+concommand.Add("ausreise_open_player", function()
+    net.Start(NET.OpenPlayer)
     net.SendToServer()
 end)

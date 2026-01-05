@@ -12,24 +12,7 @@ function ENT:Initialize()
 end
 
 local function canUseTerminal(ply)
-    if not IsValid(ply) or not ply.Team then return false end
-    local teamId = ply:Team()
-    local teamName = team.GetName(teamId)
-    for _, t in ipairs(Ausreise.Config.TerminalAccessTeams or {}) do
-        if t == nil then continue end
-        if isnumber(t) and teamId == t then return true end
-        if isstring(t) and teamName and string.lower(teamName) == string.lower(t) then return true end
-    end
-    return false
-end
-
-local function sendTerminalData(ply)
-    if not Ausreise or not Ausreise.DB or not Ausreise.DB.ready then return end
-    Ausreise.DB.query("SELECT steamid64, rpname, submitted_at, valid_until, status FROM ausreise_applications WHERE status IN ('approved','denied') ORDER BY decided_at DESC LIMIT 150", nil, function(rows)
-        net.Start("ausreise_terminal_data")
-        net.WriteTable(rows or {})
-        net.Send(ply)
-    end)
+    return Ausreise.IsTerminalUser and Ausreise.IsTerminalUser(ply) or false
 end
 
 ENT._denyCooldown = ENT._denyCooldown or {}
@@ -48,5 +31,7 @@ function ENT:Use(activator)
         return
     end
 
-    sendTerminalData(activator)
+    if Ausreise.SendTerminalData then
+        Ausreise.SendTerminalData(activator, true)
+    end
 end

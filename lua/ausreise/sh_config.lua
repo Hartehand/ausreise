@@ -30,18 +30,18 @@ cfg.NotificationInterval = 300
 
 -- Sachbearbeiter-Teams (genau 5 Einträge)
 cfg.CaseworkerTeams = {
-    TEAM_STAATSSICHERHEIT or TEAM_STASI,
-    TEAM_GRENZE,
-    TEAM_INNERE,
-    TEAM_VERWALTUNG,
-    TEAM_MINISTERIUM,
+    "TEAM_STAATSSICHERHEIT",
+    "TEAM_GRENZE",
+    "TEAM_INNERE",
+    "TEAM_VERWALTUNG",
+    "TEAM_MINISTERIUM",
 }
 
 -- Teams, die das Terminal verwenden dürfen
 cfg.TerminalAccessTeams = {
-    TEAM_GRENZE,
-    TEAM_INNERE,
-    TEAM_STAATSSICHERHEIT or TEAM_STASI,
+    "TEAM_GRENZE",
+    "TEAM_INNERE",
+    "TEAM_STAATSSICHERHEIT",
 }
 
 -- Fragen / Felder für den Antrag
@@ -104,3 +104,10 @@ cfg.Text = {
         denied = "Ausreise abgelehnt",
     }
 }
+
+if Ausreise.RefreshLookups then
+    Ausreise.RefreshLookups()
+end
+if Ausreise.EnsureConfigTexts then
+    Ausreise.EnsureConfigTexts()
+end

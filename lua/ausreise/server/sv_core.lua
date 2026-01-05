@@ -1,58 +1,29 @@
-util.AddNetworkString("ausreise_open")
-util.AddNetworkString("ausreise_data")
-util.AddNetworkString("ausreise_submit")
-util.AddNetworkString("ausreise_submit_result")
-util.AddNetworkString("ausreise_caseworker_list")
-util.AddNetworkString("ausreise_caseworker_vote")
-util.AddNetworkString("ausreise_caseworker_detail")
-util.AddNetworkString("ausreise_terminal_data")
-
 Ausreise = Ausreise or {}
-Ausreise.Status = Ausreise.Status or {
-    submitted = "submitted",
-    in_progress = "in_progress",
-    approved = "approved",
-    denied = "denied",
-}
+Ausreise.Net = Ausreise.Net or {}
+Ausreise.Status = Ausreise.Status or {}
 
 local cfg = Ausreise.Config or {}
 local DB = Ausreise.DB or {}
-local statusNames = cfg.Text and cfg.Text.StatusNames or {}
 
 local rateLimit = {}
 local rateLimitNet = {}
 local cacheBySteam = {}
 local pendingCounts = 0
+local terminalWatchers = {}
+
+local NET = Ausreise.Net
 
 local function log(msg)
     print("[Ausreise] " .. msg)
 end
 
 local function notify(ply, msg, typ, time)
+    if not IsValid(ply) then return end
     if DarkRP and DarkRP.notify then
         DarkRP.notify(ply, typ or 0, time or 5, msg)
     else
         ply:ChatPrint(msg)
     end
-end
-
-local function isCaseworker(ply)
-    local teamIndex = ply:Team()
-    for _, t in ipairs(cfg.CaseworkerTeams or {}) do
-        if t and teamIndex == t then return true end
-    end
-    return false
-end
-
-local function isTerminalUser(ply)
-    local teamIndex = ply:Team()
-    local teamName = team.GetName(teamIndex)
-    for _, t in ipairs(cfg.TerminalAccessTeams or {}) do
-        if not t then continue end
-        if isnumber(t) and teamIndex == t then return true end
-        if isstring(t) and teamName and string.lower(teamName) == string.lower(t) then return true end
-    end
-    return false
 end
 
 local function nowSQL()
@@ -73,7 +44,10 @@ local function sanitizeFields(data)
         end
         if val == nil then continue end
         if field.type == "text" or field.type == "multiline" then
-            val = tostring(val):Left(field.maxLen or 1024)
+            val = tostring(val)
+            if field.maxLen and #val > field.maxLen then
+                val = string.Left(val, field.maxLen)
+            end
         elseif field.type == "number" then
             val = tonumber(val or 0) or 0
             if field.max and val > field.max then val = field.max end
@@ -83,7 +57,10 @@ local function sanitizeFields(data)
         elseif field.type == "dropdown" then
             local found = false
             for _, opt in ipairs(field.options or {}) do
-                if opt == val then found = true break end
+                if opt == val then
+                    found = true
+                    break
+                end
             end
             if not found then return false, "Ungültige Auswahl" end
         elseif field.type == "checkbox" then
@@ -141,12 +118,14 @@ local function updateStatus(appId, status, cb)
     end)
 end
 
-local function sendApplicationToClient(ply, app)
-    net.Start("ausreise_data")
+local function sendApplicationToClient(ply, app, opts)
+    opts = opts or {}
+    net.Start(NET.Data)
     net.WriteBool(app ~= nil)
+    net.WriteBool(opts.open ~= false)
     if app then
         net.WriteUInt(app.id, 32)
-        net.WriteString(app.status)
+        net.WriteString(app.status or "")
         net.WriteString(app.submitted_at or "")
         net.WriteString(app.decided_at or "")
         net.WriteString(app.valid_until or "")
@@ -160,67 +139,6 @@ local function refreshPendingCount()
     DB.query("SELECT COUNT(*) as c FROM ausreise_applications WHERE status IN ('submitted','in_progress')", nil, function(rows)
         pendingCounts = tonumber(rows[1] and rows[1].c) or 0
     end, function() pendingCounts = 0 end)
-end
-
-local function pushStatusUpdates()
-    if not DB.ready then return end
-    for _, ply in ipairs(player.GetAll()) do
-        local sid = ply:SteamID64()
-        if sid and sid ~= "" then
-            loadApplication(sid, function(app)
-                sendApplicationToClient(ply, app)
-            end)
-        end
-    end
-end
-
-local function canSubmit(ply)
-    local sid = ply:SteamID64()
-    if rateLimit[sid] and rateLimit[sid] > CurTime() then return false end
-    rateLimit[sid] = CurTime() + 2
-    return true
-end
-
-local function canUseNet(ply)
-    local sid = ply:SteamID64()
-    if rateLimitNet[sid] and rateLimitNet[sid] > CurTime() then return false end
-    rateLimitNet[sid] = CurTime() + 0.5
-    return true
-end
-
-local function getVoteKey(ply)
-    if cfg.VoteMode == "per_player" then
-        return ply:SteamID64()
-    end
-    return team.GetName(ply:Team()) or tostring(ply:Team())
-end
-
-local function sendCaseworkerList(ply)
-    DB.query("SELECT id, steamid64, rpname, submitted_at, status, valid_until FROM ausreise_applications WHERE status IN ('submitted','in_progress') ORDER BY submitted_at ASC", nil, function(rows)
-        local payload = {}
-        for _, r in ipairs(rows or {}) do
-            table.insert(payload, r)
-        end
-        net.Start("ausreise_caseworker_list")
-        net.WriteTable(payload)
-        net.Send(ply)
-    end)
-end
-
-local function sendCaseworkerDetail(ply, appId)
-    DB.query("SELECT * FROM ausreise_applications WHERE id = ?", {appId}, function(rows)
-        local app = rows and rows[1]
-        if not app then return end
-        DB.query("SELECT team_key, vote, voter_steamid64, voted_at FROM ausreise_votes WHERE application_id = ?", {appId}, function(votes)
-            net.Start("ausreise_caseworker_detail")
-            net.WriteBool(true)
-            net.WriteTable(app)
-            net.WriteTable(votes or {})
-            net.Send(ply)
-        end)
-    end, function(err)
-        log("DB Fehler Detail: " .. tostring(err))
-    end)
 end
 
 local function notifyApplicant(app, approved)
@@ -253,20 +171,11 @@ local function finalize(appId, appData)
     end)
 end
 
-local function insertVote(ply, appId, voteVal)
-    local teamKey = getVoteKey(ply)
-    DB.query("INSERT INTO ausreise_votes (application_id, team_key, vote, voter_steamid64, voted_at) VALUES (?, ?, ?, ?, ?)", {appId, teamKey, voteVal, ply:SteamID64(), nowSQL()}, function()
-        DB.query("SELECT status, steamid64 FROM ausreise_applications WHERE id = ?", {appId}, function(rows)
-            local app = rows and rows[1]
-            if not app then return end
-            if app.status == Ausreise.Status.submitted then
-                DB.query("UPDATE ausreise_applications SET status = 'in_progress' WHERE id = ?", {appId})
-            end
-            finalize(appId, app)
-        end)
-    end, function(err)
-        notify(ply, "Vote fehlgeschlagen: " .. tostring(err), 1)
-    end)
+local function getVoteKey(ply)
+    if cfg.VoteMode == "per_player" then
+        return ply:SteamID64()
+    end
+    return team.GetName(ply:Team()) or tostring(ply:Team())
 end
 
 local function existingVote(appId, teamKey, cb)
@@ -275,23 +184,129 @@ local function existingVote(appId, teamKey, cb)
     end, function() cb(false) end)
 end
 
--- Chat command
-local function openMenu(ply)
-    if not canSubmit(ply) then return end
-    loadApplication(ply:SteamID64(), function(app)
-        sendApplicationToClient(ply, app)
+local function canSubmit(ply)
+    local sid = ply:SteamID64()
+    if rateLimit[sid] and rateLimit[sid] > CurTime() then return false end
+    rateLimit[sid] = CurTime() + 2
+    return true
+end
+
+local function canUseNet(ply)
+    local sid = ply:SteamID64()
+    if rateLimitNet[sid] and rateLimitNet[sid] > CurTime() then return false end
+    rateLimitNet[sid] = CurTime() + 0.4
+    return true
+end
+
+local function sendCaseworkerList(ply, opts)
+    DB.query("SELECT id, steamid64, rpname, submitted_at, status, valid_until FROM ausreise_applications WHERE status IN ('submitted','in_progress') ORDER BY submitted_at ASC", nil, function(rows)
+        net.Start(NET.CaseworkerList)
+        net.WriteBool(not (opts and opts.open == false))
+        net.WriteTable(rows or {})
+        net.Send(ply)
     end)
 end
 
+local function sendCaseworkerDetail(ply, appId)
+    DB.query("SELECT * FROM ausreise_applications WHERE id = ?", {appId}, function(rows)
+        local app = rows and rows[1]
+        if not app then return end
+        DB.query("SELECT team_key, vote, voter_steamid64, voted_at FROM ausreise_votes WHERE application_id = ?", {appId}, function(votes)
+            net.Start(NET.CaseworkerDetail)
+            net.WriteBool(true)
+            net.WriteTable(app)
+            net.WriteTable(votes or {})
+            net.Send(ply)
+        end)
+    end, function(err)
+        log("DB Fehler Detail: " .. tostring(err))
+    end)
+end
+
+local function sendTerminalData(ply, opts)
+    DB.query("SELECT steamid64, rpname, submitted_at, valid_until, status FROM ausreise_applications WHERE status IN ('approved','denied') ORDER BY decided_at DESC LIMIT 150", nil, function(rows)
+        net.Start(NET.TerminalData)
+        net.WriteBool(not (opts and opts.open == false))
+        net.WriteTable(rows or {})
+        net.Send(ply)
+    end)
+end
+
+local function sendPlayerData(ply, open)
+    loadApplication(ply:SteamID64(), function(app)
+        sendApplicationToClient(ply, app, {open = open})
+    end)
+end
+
+local function trackTerminalWatcher(ply)
+    terminalWatchers[ply] = CurTime() + 150
+end
+
+function Ausreise.SendTerminalData(ply, open)
+    if not IsValid(ply) then return end
+    sendTerminalData(ply, {open = open})
+    if open ~= false then
+        trackTerminalWatcher(ply)
+    end
+end
+
+function Ausreise.SendPlayerData(ply, open)
+    if not IsValid(ply) then return end
+    sendPlayerData(ply, open)
+end
+
+function Ausreise.SendCaseworkerList(ply, open)
+    if not IsValid(ply) then return end
+    sendCaseworkerList(ply, {open = open})
+end
+
+local function insertVote(ply, appId, voteVal)
+    local teamKey = getVoteKey(ply)
+    DB.query("INSERT INTO ausreise_votes (application_id, team_key, vote, voter_steamid64, voted_at) VALUES (?, ?, ?, ?, ?)", {appId, teamKey, voteVal, ply:SteamID64(), nowSQL()}, function()
+        DB.query("SELECT status, steamid64 FROM ausreise_applications WHERE id = ?", {appId}, function(rows)
+            local app = rows and rows[1]
+            if not app then return end
+            if app.status == Ausreise.Status.submitted then
+                DB.query("UPDATE ausreise_applications SET status = 'in_progress' WHERE id = ?", {appId}, function()
+                    cacheBySteam[app.steamid64] = nil
+                end)
+            else
+                cacheBySteam[app.steamid64] = nil
+            end
+            finalize(appId, app)
+        end)
+    end, function(err)
+        notify(ply, "Vote fehlgeschlagen: " .. tostring(err), 1)
+    end)
+end
+
+local function openMenu(ply)
+    if not canSubmit(ply) then return end
+    sendPlayerData(ply, true)
+end
+
 local function openCaseworkerUI(ply)
-    if not canUseNet(ply) or not isCaseworker(ply) then return end
-    sendCaseworkerList(ply)
+    if not canUseNet(ply) or not Ausreise.IsCaseworker(ply) then return end
+    sendCaseworkerList(ply, {open = true})
+end
+
+local function openPlayerUI(ply)
+    if not canUseNet(ply) then return end
+    sendPlayerData(ply, true)
+end
+
+local function handleChat(ply)
+    if Ausreise.IsCaseworker(ply) then
+        openCaseworkerUI(ply)
+    else
+        openMenu(ply)
+    end
 end
 
 hook.Add("PlayerSay", "Ausreise_ChatCommand", function(ply, text)
-    local msg = text:lower():Trim()
+    local msg = string.Trim(string.lower(text or ""))
     if msg == "/ausreise" then
-        if isCaseworker(ply) then openCaseworkerUI(ply) else openMenu(ply) end
+        handleChat(ply)
         return ""
     elseif msg == "/ausreisesachbearbeiter" or msg == "/ausreise_sb" or msg == "/ausreisevote" then
         openCaseworkerUI(ply)
@@ -299,19 +314,30 @@ hook.Add("PlayerSay", "Ausreise_ChatCommand", function(ply, text)
     end
 end)
 
+if DarkRP and DarkRP.defineChatCommand then
+    DarkRP.defineChatCommand("ausreise", function(ply) handleChat(ply) end)
+    DarkRP.defineChatCommand("ausreise_sb", function(ply) openCaseworkerUI(ply) end)
+end
+
 -- Network receive handlers
-net.Receive("ausreise_open", function(_, ply)
+net.Receive(NET.Open, function(_, ply)
     if not canUseNet(ply) then return end
-    if isCaseworker(ply) then
-        openCaseworkerUI(ply)
-    else
-        openMenu(ply)
-    end
+    handleChat(ply)
 end)
 
-net.Receive("ausreise_submit", function(_, ply)
+net.Receive(NET.OpenCaseworker, function(_, ply)
     if not canUseNet(ply) then return end
-    local len = net.ReadUInt(16)
+    openCaseworkerUI(ply)
+end)
+
+net.Receive(NET.OpenPlayer, function(_, ply)
+    if not canUseNet(ply) then return end
+    openPlayerUI(ply)
+end)
+
+net.Receive(NET.Submit, function(_, ply)
+    if not canUseNet(ply) then return end
+    local len = net.ReadUInt(17)
     if len > 64000 then return end
     local json = net.ReadData(len)
     local decoded = util.JSONToTable(json or "") or {}
@@ -339,26 +365,26 @@ net.Receive("ausreise_submit", function(_, ply)
             cacheBySteam[sid] = nil
             refreshPendingCount()
             notify(ply, "Antrag eingereicht.", 0)
-            loadApplication(sid, function(app2) sendApplicationToClient(ply, app2) end)
+            loadApplication(sid, function(app2) sendApplicationToClient(ply, app2, {open = true}) end)
         end, function(err)
             notify(ply, "Datenbankfehler: " .. tostring(err), 1)
         end)
     end)
 end)
 
-net.Receive("ausreise_caseworker_list", function(_, ply)
-    if not canUseNet(ply) or not isCaseworker(ply) then return end
-    sendCaseworkerList(ply)
+net.Receive(NET.CaseworkerList, function(_, ply)
+    if not canUseNet(ply) or not Ausreise.IsCaseworker(ply) then return end
+    sendCaseworkerList(ply, {open = true})
 end)
 
-net.Receive("ausreise_caseworker_detail", function(_, ply)
-    if not canUseNet(ply) or not isCaseworker(ply) then return end
+net.Receive(NET.CaseworkerDetail, function(_, ply)
+    if not canUseNet(ply) or not Ausreise.IsCaseworker(ply) then return end
     local appId = net.ReadUInt(32)
     sendCaseworkerDetail(ply, appId)
 end)
 
-net.Receive("ausreise_caseworker_vote", function(_, ply)
-    if not canUseNet(ply) or not isCaseworker(ply) then return end
+net.Receive(NET.CaseworkerVote, function(_, ply)
+    if not canUseNet(ply) or not Ausreise.IsCaseworker(ply) then return end
     local appId = net.ReadUInt(32)
     local voteVal = net.ReadBool() and 1 or 0
     local teamKey = getVoteKey(ply)
@@ -383,20 +409,41 @@ net.Receive("ausreise_caseworker_vote", function(_, ply)
     end)
 end)
 
-net.Receive("ausreise_terminal_data", function(_, ply)
-    if not canUseNet(ply) or not isTerminalUser(ply) then return end
-    DB.query("SELECT steamid64, rpname, submitted_at, valid_until, status FROM ausreise_applications WHERE status IN ('approved','denied') ORDER BY decided_at DESC LIMIT 150", nil, function(rows)
-        net.Start("ausreise_terminal_data")
-        net.WriteTable(rows or {})
-        net.Send(ply)
-    end)
+net.Receive(NET.TerminalData, function(_, ply)
+    if not canUseNet(ply) or not Ausreise.IsTerminalUser(ply) then return end
+    sendTerminalData(ply, {open = true})
+    trackTerminalWatcher(ply)
 end)
 
--- Pending refresh for notifications
+-- Timers
 timer.Create("Ausreise_RefreshPending", 300, 0, refreshPendingCount)
-timer.Create("Ausreise_StatusBroadcast", 60, 0, pushStatusUpdates)
 
--- Init hook to ensure early count
+timer.Create("Ausreise_PeriodicRefresh", 60, 0, function()
+    if not DB.ready then return end
+    for _, ply in ipairs(player.GetAll()) do
+        if not IsValid(ply) then continue end
+        if Ausreise.IsCaseworker(ply) then
+            sendCaseworkerList(ply, {open = false})
+        else
+            sendPlayerData(ply, false)
+        end
+        if terminalWatchers[ply] and terminalWatchers[ply] > CurTime() and Ausreise.IsTerminalUser(ply) then
+            sendTerminalData(ply, {open = false})
+        elseif terminalWatchers[ply] then
+            terminalWatchers[ply] = nil
+        end
+    end
+end)
+
+hook.Add("PlayerDisconnected", "Ausreise_CleanupWatcher", function(ply)
+    terminalWatchers[ply] = nil
+    rateLimit[ply:SteamID64()] = nil
+    rateLimitNet[ply:SteamID64()] = nil
+end)
+
+-- Init hooks
 hook.Add("InitPostEntity", "Ausreise_InitialCount", function()
     timer.Simple(3, refreshPendingCount)
 end)
+
+Ausreise.SendApplicationToClient = sendApplicationToClient
